@@ -1,0 +1,8 @@
+10_Hour_AI_Agent_MVP_Codex_Plan.md
+docs/
+.env
+.venv/
+*.log
+__pycache__/
+.pytest_cache/
+.DS_Store
