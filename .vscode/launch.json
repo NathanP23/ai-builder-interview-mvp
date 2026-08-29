@@ -10,7 +10,7 @@
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
       "args": [
-        "Customer 1842 says order O-991 was charged twice. Check the customer, order and transactions, then explain what happened and what should happen next."
+        "Customer 1842 says order O-991 was charged twice. Check the customer, order and transactions, then prepare a refund if policy allows."
       ],
       "justMyCode": true,
       "variablePresentation": {

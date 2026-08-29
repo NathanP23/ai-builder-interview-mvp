@@ -15,6 +15,7 @@ class AgentState(TypedDict):
     customer_id: str
     order_id: str
     tool_results: dict[str, Any]
+    approval_required: bool
     step_count: int
 
 
@@ -36,6 +37,21 @@ ORDERS = {
         "customer_id": "1842",
         "item": "Warehouse scanner subscription",
         "amount": "$499.00",
+        "amount_cents": 49900,
+        "status": "paid",
+    },
+    "O-2000": {
+        "customer_id": "1842",
+        "item": "Enterprise hardware bundle",
+        "amount": "$2,500.00",
+        "amount_cents": 250000,
+        "status": "paid",
+    },
+    "O-123": {
+        "customer_id": "1842",
+        "item": "Support seat",
+        "amount": "$99.00",
+        "amount_cents": 9900,
         "status": "paid",
     }
 }
@@ -43,7 +59,12 @@ ORDERS = {
 TRANSACTIONS = [
     {"customer_id": "1842", "order_id": "O-991", "kind": "charge", "amount": "$499.00"},
     {"customer_id": "1842", "order_id": "O-991", "kind": "charge", "amount": "$499.00"},
+    {"customer_id": "1842", "order_id": "O-2000", "kind": "charge", "amount": "$2,500.00"},
+    {"customer_id": "1842", "order_id": "O-2000", "kind": "charge", "amount": "$2,500.00"},
+    {"customer_id": "1842", "order_id": "O-123", "kind": "charge", "amount": "$99.00"},
 ]
+
+AUTO_REFUND_LIMIT_CENTS = 100000
 
 
 @tool
@@ -68,10 +89,50 @@ def search_transactions(customer_id: str) -> list[dict[str, str]]:
     ]
 
 
+@tool
+def prepare_refund(order_id: str) -> dict[str, Any]:
+    """Prepare a refund only if deterministic backend policy allows it."""
+    order = ORDERS.get(order_id)
+    if not order:
+        return {
+            "status": "blocked",
+            "reason": "order not found",
+            "order_id": order_id,
+        }
+
+    matching_charges = [
+        transaction
+        for transaction in TRANSACTIONS
+        if transaction["order_id"] == order_id and transaction["kind"] == "charge"
+    ]
+    if len(matching_charges) < 2:
+        return {
+            "status": "blocked",
+            "reason": "no duplicate charge found",
+            "order_id": order_id,
+        }
+
+    if order["amount_cents"] > AUTO_REFUND_LIMIT_CENTS:
+        return {
+            "status": "approval_required",
+            "reason": "duplicate charge is above the automatic refund limit",
+            "order_id": order_id,
+            "amount": order["amount"],
+        }
+
+    return {
+        "status": "prepared",
+        "reason": "duplicate charge is under the automatic refund limit",
+        "order_id": order_id,
+        "amount": order["amount"],
+    }
+
+
 TOOLS = {
     "get_customer": get_customer,
     "get_order": get_order,
     "search_transactions": search_transactions,
+    "prepare_refund": prepare_refund,
 }
 
 
@@ -88,6 +149,7 @@ def model_node(state: AgentState) -> dict[str, Any]:
     print(f"- customer_id: {state['customer_id']!r}")
     print(f"- order_id: {state['order_id']!r}")
     print(f"- tool_results keys: {list(state['tool_results'])}")
+    print(f"- approval_required: {state['approval_required']}")
     print(f"- step_count: {state['step_count']}")
     print("\nConversation the LLM will see:")
     for index, message in enumerate(state["messages"]):
@@ -191,6 +253,11 @@ def tool_node(state: AgentState) -> dict[str, Any]:
         pprint(tool_result)
         tool_results[tool_name] = tool_result
         print(f"State memory stores this observation under tool_results[{tool_name!r}].")
+        if tool_name == "prepare_refund":
+            print("\nACTION TOOL POLICY RESULT:")
+            print("The LLM requested a refund action, but Python made the policy decision.")
+            print(f"- policy status: {tool_result['status']!r}")
+            print(f"- policy reason: {tool_result['reason']!r}")
 
         print("Python wraps that observation in a ToolMessage.")
         print("ToolMessage links the result back to the original tool_call_id.")
@@ -205,6 +272,11 @@ def tool_node(state: AgentState) -> dict[str, Any]:
         "customer_id": customer_id,
         "order_id": order_id,
         "tool_results": tool_results,
+        "approval_required": any(
+            result.get("status") == "approval_required"
+            for result in tool_results.values()
+            if isinstance(result, dict)
+        ),
         "step_count": state["step_count"] + 1,
     }
     print("\ntool_node returns updated state:")
@@ -215,9 +287,10 @@ def tool_node(state: AgentState) -> dict[str, Any]:
     print(f"- order_id: {update['order_id']!r}")
     print("- tool_results:")
     pprint(update["tool_results"])
+    print(f"- approval_required: {update['approval_required']}")
     print(f"- step_count: {update['step_count']}")
     print("Next: LangGraph follows tool_node -> model_node.")
-    print("The second model pass will see the observations and answer.")
+    print("The next model pass will see the observations and decide what to do next.")
     return update
 
 
@@ -256,7 +329,7 @@ def main() -> None:
     support_request = (
         " ".join(sys.argv[1:])
         or "Customer 1842 says order O-991 was charged twice. Check the customer, "
-        "order and transactions, then explain what happened and what should happen next."
+        "order and transactions, then prepare a refund if policy allows."
     )
     print("\nUser request entering the system:")
     print(support_request)
@@ -272,13 +345,16 @@ def main() -> None:
         "messages": [
             SystemMessage(
                 "You are a support agent. Use get_customer for customer IDs, "
-                "get_order for order IDs, and search_transactions when checking charge history."
+                "get_order for order IDs, search_transactions when checking charge history, "
+                "and prepare_refund only after observations show a duplicate charge. "
+                "Never claim a refund was executed; it can only be prepared or require approval."
             ),
             HumanMessage(support_request),
         ],
         "customer_id": "",
         "order_id": "",
         "tool_results": {},
+        "approval_required": False,
         "step_count": 0,
     }
     for index, message in enumerate(initial_state["messages"]):
@@ -286,6 +362,7 @@ def main() -> None:
     print("- customer_id: ''")
     print("- order_id: ''")
     print("- tool_results: {}")
+    print("- approval_required: False")
     print("- step_count: 0")
 
     # The graph is still tiny: model -> optional tools -> model.
@@ -341,6 +418,7 @@ def main() -> None:
     print(f"- order_id: {final_state['order_id']!r}")
     print("- tool_results:")
     pprint(final_state["tool_results"])
+    print(f"- approval_required: {final_state['approval_required']}")
     print(f"- step_count: {final_state['step_count']}")
 
     print("\n============================================================")
@@ -357,8 +435,8 @@ def main() -> None:
     print("-> Python dispatched and executed tools")
     print("-> ToolMessages created")
     print("-> explicit state stored customer_id, order_id, and tool_results")
-    print("-> model_node pass 2")
-    print("-> LLM produced final answer")
+    print("-> Python policy decided whether refund preparation was allowed")
+    print("-> later model pass produced final answer")
     print("-> route_after_model -> END")
     print("-> graph.invoke returned final_state")
 
