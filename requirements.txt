@@ -1,4 +1,5 @@
 langchain-openai
 langgraph
+numpy
 pytest
 python-dotenv

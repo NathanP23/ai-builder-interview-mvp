@@ -1,13 +1,19 @@
 from pprint import pprint
 import sys
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
+from langchain_core.vectorstores import InMemoryVectorStore
 from langgraph.graph import END, START, StateGraph
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from typing_extensions import TypedDict
+
+
+POLICY_DIR = Path("policies")
 
 
 class AgentState(TypedDict):
@@ -134,6 +140,54 @@ TOOLS = {
     "search_transactions": search_transactions,
     "prepare_refund": prepare_refund,
 }
+
+
+def load_policy_documents() -> list[Document]:
+    print("\n============================================================")
+    print("LOAD POLICY DOCUMENTS")
+    print("Python reads fake policy markdown files from policies/.")
+    print("Each file becomes one document chunk for this tiny demo.")
+    print("Later, chunking can become smarter if the files get large.")
+
+    documents = []
+    for path in sorted(POLICY_DIR.glob("*.md")):
+        text = path.read_text()
+        document = Document(page_content=text, metadata={"source": path.name})
+        documents.append(document)
+        print(f"- loaded {path.name} as one chunk")
+
+    return documents
+
+
+def run_policy_retrieval_demo() -> None:
+    print("\n============================================================")
+    print("POLICY RETRIEVAL DEMO")
+    print("This is Checkpoint 8: retrieval exists, but it is not an agent tool yet.")
+    print("Goal: turn policy text into vectors, then search for relevant policy chunks.")
+
+    documents = load_policy_documents()
+
+    print("\nEMBEDDINGS")
+    print("Python sends each policy chunk to OpenAIEmbeddings.")
+    print("The hosted embedding model returns vectors: lists of numbers meaning text position.")
+    print("Secrets are not printed. Policy text does leave the machine for embedding.")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+    print("\nVECTOR STORE")
+    print("InMemoryVectorStore stores the document vectors only in this Python process.")
+    print("No database or persistence yet; when the program exits, this store disappears.")
+    vector_store = InMemoryVectorStore.from_documents(documents, embeddings)
+
+    query = "When can a duplicate charge be refunded?"
+    print("\nQUERY")
+    print(f"User-style policy question: {query!r}")
+    print("Python embeds the query, compares it to document vectors, and returns top-k matches.")
+    matches = vector_store.similarity_search(query, k=2)
+
+    print("\nTOP POLICY MATCHES")
+    for index, match in enumerate(matches, start=1):
+        print(f"{index}. source={match.metadata['source']}")
+        print(match.page_content.strip())
 
 
 def model_node(state: AgentState) -> dict[str, Any]:
@@ -439,6 +493,8 @@ def main() -> None:
     print("-> later model pass produced final answer")
     print("-> route_after_model -> END")
     print("-> graph.invoke returned final_state")
+
+    run_policy_retrieval_demo()
 
 
 if __name__ == "__main__":

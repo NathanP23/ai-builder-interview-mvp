@@ -1,4 +1,10 @@
-from app import get_customer, get_order, prepare_refund, search_transactions
+from app import (
+    load_policy_documents,
+    get_customer,
+    get_order,
+    prepare_refund,
+    search_transactions,
+)
 
 
 def test_get_customer_known_customer() -> None:
@@ -69,3 +75,11 @@ def test_prepare_refund_missing_order_is_blocked() -> None:
         "reason": "order not found",
         "order_id": "missing",
     }
+
+
+def test_load_policy_documents_reads_policy_files() -> None:
+    documents = load_policy_documents()
+    sources = {document.metadata["source"] for document in documents}
+
+    assert "refund_policy.md" in sources
+    assert any("duplicate charge" in document.page_content for document in documents)
