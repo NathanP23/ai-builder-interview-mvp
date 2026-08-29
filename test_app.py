@@ -1,4 +1,5 @@
 from app import (
+    TOOLS,
     load_policy_documents,
     get_customer,
     get_order,
@@ -83,3 +84,7 @@ def test_load_policy_documents_reads_policy_files() -> None:
 
     assert "refund_policy.md" in sources
     assert any("duplicate charge" in document.page_content for document in documents)
+
+
+def test_search_policy_is_allowlisted_for_the_agent() -> None:
+    assert "search_policy" in TOOLS

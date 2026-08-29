@@ -134,14 +134,6 @@ def prepare_refund(order_id: str) -> dict[str, Any]:
     }
 
 
-TOOLS = {
-    "get_customer": get_customer,
-    "get_order": get_order,
-    "search_transactions": search_transactions,
-    "prepare_refund": prepare_refund,
-}
-
-
 def load_policy_documents() -> list[Document]:
     print("\n============================================================")
     print("LOAD POLICY DOCUMENTS")
@@ -159,12 +151,7 @@ def load_policy_documents() -> list[Document]:
     return documents
 
 
-def run_policy_retrieval_demo() -> None:
-    print("\n============================================================")
-    print("POLICY RETRIEVAL DEMO")
-    print("This is Checkpoint 8: retrieval exists, but it is not an agent tool yet.")
-    print("Goal: turn policy text into vectors, then search for relevant policy chunks.")
-
+def find_policy_matches(query: str, k: int = 2) -> list[Document]:
     documents = load_policy_documents()
 
     print("\nEMBEDDINGS")
@@ -178,11 +165,49 @@ def run_policy_retrieval_demo() -> None:
     print("No database or persistence yet; when the program exits, this store disappears.")
     vector_store = InMemoryVectorStore.from_documents(documents, embeddings)
 
-    query = "When can a duplicate charge be refunded?"
     print("\nQUERY")
-    print(f"User-style policy question: {query!r}")
-    print("Python embeds the query, compares it to document vectors, and returns top-k matches.")
-    matches = vector_store.similarity_search(query, k=2)
+    print(f"Policy search query: {query!r}")
+    print("Python embeds the query, compares it to policy vectors, and returns top-k matches.")
+    return vector_store.similarity_search(query, k=k)
+
+
+@tool
+def search_policy(query: str) -> list[dict[str, str]]:
+    """Search refund, escalation, account, and privacy policy text."""
+    print("\n============================================================")
+    print("SEARCH POLICY TOOL")
+    print("The LLM asked for policy context instead of guessing the rule.")
+    print("Python now runs semantic retrieval over the policy documents.")
+
+    matches = find_policy_matches(query)
+
+    print("\nPOLICY OBSERVATIONS RETURNED TO THE LLM")
+    print("These snippets become a ToolMessage, so the next LLM turn can use them.")
+    results = [
+        {"source": match.metadata["source"], "content": match.page_content.strip()}
+        for match in matches
+    ]
+    pprint(results)
+    return results
+
+
+TOOLS = {
+    "get_customer": get_customer,
+    "get_order": get_order,
+    "search_transactions": search_transactions,
+    "search_policy": search_policy,
+    "prepare_refund": prepare_refund,
+}
+
+
+def run_policy_retrieval_demo() -> None:
+    print("\n============================================================")
+    print("POLICY RETRIEVAL DEMO")
+    print("This is Checkpoint 8: retrieval exists, but it is not an agent tool yet.")
+    print("Goal: turn policy text into vectors, then search for relevant policy chunks.")
+
+    query = "When can a duplicate charge be refunded?"
+    matches = find_policy_matches(query)
 
     print("\nTOP POLICY MATCHES")
     for index, match in enumerate(matches, start=1):
@@ -383,7 +408,7 @@ def main() -> None:
     support_request = (
         " ".join(sys.argv[1:])
         or "Customer 1842 says order O-991 was charged twice. Check the customer, "
-        "order and transactions, then prepare a refund if policy allows."
+        "order, transactions, and refund policy, then prepare a refund if policy allows."
     )
     print("\nUser request entering the system:")
     print(support_request)
@@ -400,6 +425,7 @@ def main() -> None:
             SystemMessage(
                 "You are a support agent. Use get_customer for customer IDs, "
                 "get_order for order IDs, search_transactions when checking charge history, "
+                "search_policy when you need refund or escalation rules, "
                 "and prepare_refund only after observations show a duplicate charge. "
                 "Never claim a refund was executed; it can only be prepared or require approval."
             ),
@@ -489,12 +515,11 @@ def main() -> None:
     print("-> Python dispatched and executed tools")
     print("-> ToolMessages created")
     print("-> explicit state stored customer_id, order_id, and tool_results")
+    print("-> if policy was needed, search_policy returned retrieved policy snippets")
     print("-> Python policy decided whether refund preparation was allowed")
     print("-> later model pass produced final answer")
     print("-> route_after_model -> END")
     print("-> graph.invoke returned final_state")
-
-    run_policy_retrieval_demo()
 
 
 if __name__ == "__main__":
