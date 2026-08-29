@@ -1,5 +1,6 @@
 from pprint import pprint
 import sys
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -11,6 +12,10 @@ from typing_extensions import TypedDict
 
 class AgentState(TypedDict):
     messages: list[BaseMessage]
+    customer_id: str
+    order_id: str
+    tool_results: dict[str, Any]
+    step_count: int
 
 
 model_pass_count = 0
@@ -70,7 +75,7 @@ TOOLS = {
 }
 
 
-def model_node(state: AgentState) -> AgentState:
+def model_node(state: AgentState) -> dict[str, Any]:
     global model_pass_count
     model_pass_count += 1
 
@@ -79,6 +84,11 @@ def model_node(state: AgentState) -> AgentState:
     print("LangGraph now calls model_node(state).")
     print("This function gives the LLM the conversation so far.")
     print("The LLM can either answer, or ask Python to run tools.")
+    print("\nExplicit state memory entering this node:")
+    print(f"- customer_id: {state['customer_id']!r}")
+    print(f"- order_id: {state['order_id']!r}")
+    print(f"- tool_results keys: {list(state['tool_results'])}")
+    print(f"- step_count: {state['step_count']}")
     print("\nConversation the LLM will see:")
     for index, message in enumerate(state["messages"]):
         print(f"- {index}: {message.type}: {message.content!r}")
@@ -124,13 +134,18 @@ def model_node(state: AgentState) -> AgentState:
 
     print("\nmodel_node returns an updated state:")
     print("old messages + this new AI message")
-    update = {"messages": [*state["messages"], response]}
+    print("It also increments step_count so we can see progress through the graph.")
+    update = {
+        "messages": [*state["messages"], response],
+        "step_count": state["step_count"] + 1,
+    }
     print(f"message count is now {len(update['messages'])}")
+    print(f"step_count is now {update['step_count']}")
     print("Next: LangGraph asks route_after_model where to go.")
     return update
 
 
-def tool_node(state: AgentState) -> AgentState:
+def tool_node(state: AgentState) -> dict[str, Any]:
     print("\n============================================================")
     print("TOOL NODE")
     print("LangGraph routed here because the LLM requested tools.")
@@ -143,6 +158,14 @@ def tool_node(state: AgentState) -> AgentState:
     last_message = state["messages"][-1]
 
     tool_messages = []
+    customer_id = state["customer_id"]
+    order_id = state["order_id"]
+    tool_results = dict(state["tool_results"])
+
+    print("\nExplicit state memory before tools:")
+    print(f"- customer_id: {customer_id!r}")
+    print(f"- order_id: {order_id!r}")
+    print(f"- tool_results: {tool_results}")
 
     for index, tool_call in enumerate(last_message.tool_calls):
         print("\n------------------------------------------------------------")
@@ -153,12 +176,21 @@ def tool_node(state: AgentState) -> AgentState:
         tool_args = tool_call["args"]
         selected_tool = TOOLS[tool_name]
 
+        if "customer_id" in tool_args:
+            customer_id = tool_args["customer_id"]
+            print(f"State memory learns customer_id={customer_id!r} from tool args.")
+        if "order_id" in tool_args:
+            order_id = tool_args["order_id"]
+            print(f"State memory learns order_id={order_id!r} from tool args.")
+
         print("Python dispatch:")
         print(f"- TOOLS[{tool_name!r}] selects the allowlisted function wrapper")
         print("- now Python executes it with the LLM-provided args")
         tool_result = selected_tool.invoke(tool_args)
         print("Observation produced by Python:")
         pprint(tool_result)
+        tool_results[tool_name] = tool_result
+        print(f"State memory stores this observation under tool_results[{tool_name!r}].")
 
         print("Python wraps that observation in a ToolMessage.")
         print("ToolMessage links the result back to the original tool_call_id.")
@@ -168,10 +200,22 @@ def tool_node(state: AgentState) -> AgentState:
         print(f"- ToolMessage content: {tool_message.content!r}")
         tool_messages.append(tool_message)
 
-    update = {"messages": [*state["messages"], *tool_messages]}
+    update = {
+        "messages": [*state["messages"], *tool_messages],
+        "customer_id": customer_id,
+        "order_id": order_id,
+        "tool_results": tool_results,
+        "step_count": state["step_count"] + 1,
+    }
     print("\ntool_node returns updated state:")
     print("old messages + ToolMessage observations")
     print(f"message count is now {len(update['messages'])}")
+    print("Explicit state memory after tools:")
+    print(f"- customer_id: {update['customer_id']!r}")
+    print(f"- order_id: {update['order_id']!r}")
+    print("- tool_results:")
+    pprint(update["tool_results"])
+    print(f"- step_count: {update['step_count']}")
     print("Next: LangGraph follows tool_node -> model_node.")
     print("The second model pass will see the observations and answer.")
     return update
@@ -223,6 +267,7 @@ def main() -> None:
     # Later nodes append AI and tool messages until the answer is complete.
     print("\nPython creates initial_state.")
     print("This is the conversation LangGraph will carry through the graph.")
+    print("It also starts explicit state memory as empty/default values.")
     initial_state: AgentState = {
         "messages": [
             SystemMessage(
@@ -230,10 +275,18 @@ def main() -> None:
                 "get_order for order IDs, and search_transactions when checking charge history."
             ),
             HumanMessage(support_request),
-        ]
+        ],
+        "customer_id": "",
+        "order_id": "",
+        "tool_results": {},
+        "step_count": 0,
     }
     for index, message in enumerate(initial_state["messages"]):
         print(f"- messages[{index}] {message.type}: {message.content!r}")
+    print("- customer_id: ''")
+    print("- order_id: ''")
+    print("- tool_results: {}")
+    print("- step_count: 0")
 
     # The graph is still tiny: model -> optional tools -> model.
     # The conditional edge is the agent loop in its smallest useful form.
@@ -283,6 +336,13 @@ def main() -> None:
     print("\nFinal natural-language answer:")
     print(final_state["messages"][-1].content)
 
+    print("\nFinal explicit state memory:")
+    print(f"- customer_id: {final_state['customer_id']!r}")
+    print(f"- order_id: {final_state['order_id']!r}")
+    print("- tool_results:")
+    pprint(final_state["tool_results"])
+    print(f"- step_count: {final_state['step_count']}")
+
     print("\n============================================================")
     print("EXECUTION SUMMARY")
     print("main")
@@ -296,6 +356,7 @@ def main() -> None:
     print("-> route_after_model -> tool_node")
     print("-> Python dispatched and executed tools")
     print("-> ToolMessages created")
+    print("-> explicit state stored customer_id, order_id, and tool_results")
     print("-> model_node pass 2")
     print("-> LLM produced final answer")
     print("-> route_after_model -> END")
