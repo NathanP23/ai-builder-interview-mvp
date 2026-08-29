@@ -1,4 +1,5 @@
 from pprint import pprint
+import os
 import re
 import sys
 from pathlib import Path
@@ -164,6 +165,19 @@ def keyword_policy_matches(query: str, documents: list[Document]) -> list[Docume
         for document in documents
         if any(term in document.page_content.lower() for term in query_terms)
     ]
+
+
+def print_langsmith_status() -> None:
+    tracing_enabled = os.getenv("LANGSMITH_TRACING", "").lower() == "true"
+    api_key_configured = bool(os.getenv("LANGSMITH_API_KEY"))
+    project = os.getenv("LANGSMITH_PROJECT", "default")
+
+    print("\nLangSmith tracing check:")
+    print("LangSmith is the hosted timeline for this run: model calls, tools, retrieval, errors.")
+    print(f"- tracing enabled: {tracing_enabled}")
+    print(f"- API key configured: {api_key_configured}")
+    print(f"- project: {project!r}")
+    print("No LangSmith or OpenAI secret values are printed.")
 
 
 def find_policy_matches(query: str, k: int = 2) -> list[Document]:
@@ -442,6 +456,7 @@ def main() -> None:
     print("\nPython loads .env so the OpenAI client can authenticate.")
     print("The API key is never printed.")
     load_dotenv()
+    print_langsmith_status()
 
     support_request = (
         " ".join(sys.argv[1:])
