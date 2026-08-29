@@ -1,3 +1,5 @@
+import json
+
 from app import (
     TOOLS,
     keyword_policy_matches,
@@ -7,6 +9,31 @@ from app import (
     prepare_refund,
     search_transactions,
 )
+
+
+def test_eval_cases_have_required_fields() -> None:
+    with open("eval_cases.json") as file:
+        cases = json.load(file)
+
+    required_fields = {
+        "id",
+        "input",
+        "expected_tools",
+        "expected_order_id",
+        "expected_customer_id",
+        "expected_sources",
+        "expected_refund_status",
+        "forbidden_actions",
+    }
+
+    assert len(cases) >= 8
+    for case in cases:
+        assert required_fields <= case.keys()
+        assert isinstance(case["id"], str) and case["id"]
+        assert isinstance(case["input"], str) and case["input"]
+        assert isinstance(case["expected_tools"], list)
+        assert isinstance(case["expected_sources"], list)
+        assert isinstance(case["forbidden_actions"], list)
 
 
 def test_get_customer_known_customer() -> None:
