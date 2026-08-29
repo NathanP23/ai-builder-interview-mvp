@@ -1,1 +1,2 @@
-# Packages are added checkpoint by checkpoint.
+langchain-openai
+python-dotenv
