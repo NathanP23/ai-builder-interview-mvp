@@ -1,4 +1,5 @@
 from pprint import pprint
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -151,8 +152,33 @@ def load_policy_documents() -> list[Document]:
     return documents
 
 
+def keyword_policy_matches(query: str, documents: list[Document]) -> list[Document]:
+    query_terms = {
+        term.lower()
+        for term in re.findall(r"[A-Za-z0-9-]+", query)
+        if len(term) >= 4
+    }
+
+    return [
+        document
+        for document in documents
+        if any(term in document.page_content.lower() for term in query_terms)
+    ]
+
+
 def find_policy_matches(query: str, k: int = 2) -> list[Document]:
     documents = load_policy_documents()
+
+    print("\nKEYWORD CHECK")
+    print("Python first checks literal words/codes in the policy text.")
+    print("This helps exact IDs like POLICY-REF-2026-17, where meaning alone is not enough.")
+    keyword_matches = keyword_policy_matches(query, documents)
+    if keyword_matches:
+        print("Keyword matches found:")
+        for match in keyword_matches:
+            print(f"- {match.metadata['source']}")
+    else:
+        print("No keyword matches found. Semantic search still runs next.")
 
     print("\nEMBEDDINGS")
     print("Python sends each policy chunk to OpenAIEmbeddings.")
@@ -168,7 +194,19 @@ def find_policy_matches(query: str, k: int = 2) -> list[Document]:
     print("\nQUERY")
     print(f"Policy search query: {query!r}")
     print("Python embeds the query, compares it to policy vectors, and returns top-k matches.")
-    return vector_store.similarity_search(query, k=k)
+    semantic_matches = vector_store.similarity_search(query, k=k)
+
+    print("\nMERGE RETRIEVAL RESULTS")
+    print("Keyword hits go first. Semantic hits fill the rest.")
+    merged_matches = []
+    seen_sources = set()
+    for match in [*keyword_matches, *semantic_matches]:
+        source = match.metadata["source"]
+        if source not in seen_sources:
+            merged_matches.append(match)
+            seen_sources.add(source)
+
+    return merged_matches[:k]
 
 
 @tool

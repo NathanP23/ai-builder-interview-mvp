@@ -1,5 +1,6 @@
 from app import (
     TOOLS,
+    keyword_policy_matches,
     load_policy_documents,
     get_customer,
     get_order,
@@ -88,3 +89,10 @@ def test_load_policy_documents_reads_policy_files() -> None:
 
 def test_search_policy_is_allowlisted_for_the_agent() -> None:
     assert "search_policy" in TOOLS
+
+
+def test_keyword_policy_matches_exact_policy_id() -> None:
+    documents = load_policy_documents()
+    matches = keyword_policy_matches("POLICY-REF-2026-17", documents)
+
+    assert [match.metadata["source"] for match in matches] == ["refund_policy.md"]
