@@ -1,5 +1,7 @@
+fastapi
 langchain-openai
 langgraph
 numpy
 pytest
 python-dotenv
+uvicorn

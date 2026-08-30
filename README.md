@@ -10,6 +10,18 @@ The project will grow checkpoint by checkpoint from a single Python entry point 
 PYTHONDONTWRITEBYTECODE=1 python app.py
 ```
 
+## Run API locally
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -m uvicorn api.server:app --reload
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Customer 1842 says order O-991 was charged twice. Check the refund policy and prepare a refund if allowed."}'
+```
+
 ## Run tests and evals
 
 ```bash
