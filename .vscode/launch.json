@@ -9,6 +9,9 @@
       "python": "${workspaceFolder}/.venv/bin/python",
       "console": "integratedTerminal",
       "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
       "args": [
         "Customer 1842 says order O-991 was charged twice. Check the customer, order, transactions, and refund policy, then prepare a refund if policy allows."
       ],

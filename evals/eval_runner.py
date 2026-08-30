@@ -1,15 +1,21 @@
 import contextlib
 import io
 import json
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
-from app import AgentState, print_langsmith_status, run_agent
+from agent.graph import run_agent
+from agent.reporting import print_langsmith_status
+from agent.state import AgentState
+
+
+EVAL_CASES_PATH = Path(__file__).with_name("eval_cases.json")
 
 
 def load_eval_cases() -> list[dict[str, Any]]:
-    with open("eval_cases.json") as file:
+    with EVAL_CASES_PATH.open() as file:
         return json.load(file)
 
 

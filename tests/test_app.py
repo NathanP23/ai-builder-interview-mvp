@@ -2,24 +2,21 @@ import json
 
 from langchain_core.messages import AIMessage
 
-from eval_runner import actual_from_state, score_case
-
-from app import (
-    AUTO_REFUND_LIMIT_CENTS,
-    ORDERS,
-    TOOLS,
-    TRANSACTIONS,
-    keyword_policy_matches,
-    load_policy_documents,
+from agent.state import AgentState
+from data.fake_business_data import AUTO_REFUND_LIMIT_CENTS, ORDERS, TRANSACTIONS
+from evals.eval_runner import EVAL_CASES_PATH, actual_from_state, score_case
+from retrieval.policy_retrieval import keyword_policy_matches, load_policy_documents
+from tools.business_tools import (
     get_customer,
     get_order,
     prepare_refund,
     search_transactions,
 )
+from tools.registry import TOOLS
 
 
 def test_eval_cases_have_required_fields() -> None:
-    with open("eval_cases.json") as file:
+    with EVAL_CASES_PATH.open() as file:
         cases = json.load(file)
 
     required_fields = {
@@ -44,7 +41,7 @@ def test_eval_cases_have_required_fields() -> None:
 
 
 def test_eval_case_ids_are_unique_and_expected_tools_are_known() -> None:
-    with open("eval_cases.json") as file:
+    with EVAL_CASES_PATH.open() as file:
         cases = json.load(file)
 
     case_ids = [case["id"] for case in cases]
@@ -102,7 +99,7 @@ def test_eval_scoring_detects_failures_and_forbidden_actions() -> None:
 
 
 def test_actual_from_state_extracts_eval_signals() -> None:
-    final_state = {
+    final_state: AgentState = {
         "messages": [AIMessage("done")],
         "customer_id": "1842",
         "order_id": "O-991",

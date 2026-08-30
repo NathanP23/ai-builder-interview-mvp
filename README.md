@@ -7,14 +7,14 @@ The project will grow checkpoint by checkpoint from a single Python entry point 
 ## Run locally
 
 ```bash
-python app.py
+PYTHONDONTWRITEBYTECODE=1 python app.py
 ```
 
 ## Run tests and evals
 
 ```bash
-python -m pytest -q
-python eval_runner.py
+PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider
+PYTHONDONTWRITEBYTECODE=1 python -m evals.eval_runner
 ```
 
 ## Production limitations
