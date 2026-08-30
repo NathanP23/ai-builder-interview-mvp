@@ -73,6 +73,29 @@ TRANSACTIONS = [
 ]
 
 AUTO_REFUND_LIMIT_CENTS = 100000
+KEYWORD_STOP_WORDS = {
+    "account",
+    "allowed",
+    "charged",
+    "check",
+    "customer",
+    "order",
+    "policy",
+    "prepare",
+    "says",
+    "twice",
+}
+DEFAULT_SUPPORT_REQUEST = (
+    "Customer 1842 says order O-991 was charged twice. Check the customer, "
+    "order, transactions, and refund policy, then prepare a refund if policy allows."
+)
+SYSTEM_PROMPT = (
+    "You are a support agent. Use get_customer for customer IDs, "
+    "get_order for order IDs, search_transactions when checking charge history, "
+    "search_policy when you need refund or escalation rules, "
+    "and prepare_refund only after observations show a duplicate charge. "
+    "Never claim a refund was executed; it can only be prepared or require approval."
+)
 
 
 @tool
@@ -157,13 +180,25 @@ def keyword_policy_matches(query: str, documents: list[Document]) -> list[Docume
     query_terms = {
         term.lower()
         for term in re.findall(r"[A-Za-z0-9-]+", query)
-        if len(term) >= 4
+        if len(term) >= 4 and term.lower() not in KEYWORD_STOP_WORDS
     }
+
+    scored_matches = []
+    for document in documents:
+        text = document.page_content.lower()
+        score = sum(term in text for term in query_terms)
+        if score:
+            scored_matches.append((score, document))
 
     return [
         document
-        for document in documents
-        if any(term in document.page_content.lower() for term in query_terms)
+        for _, document in sorted(
+            scored_matches,
+            key=lambda scored_match: (
+                -scored_match[0],
+                scored_match[1].metadata["source"],
+            ),
+        )
     ]
 
 
@@ -444,44 +479,16 @@ def route_after_model(state: AgentState) -> str:
     return route
 
 
-def main() -> None:
-    global model_pass_count
-    model_pass_count = 0
-
-    print("\n============================================================")
-    print("PROGRAM START")
-    print("Python starts locally on your machine.")
-
-    # Loads OPENAI_API_KEY from local .env into the process environment.
-    print("\nPython loads .env so the OpenAI client can authenticate.")
-    print("The API key is never printed.")
-    load_dotenv()
-    print_langsmith_status()
-
-    support_request = (
-        " ".join(sys.argv[1:])
-        or "Customer 1842 says order O-991 was charged twice. Check the customer, "
-        "order, transactions, and refund policy, then prepare a refund if policy allows."
-    )
-    print("\nUser request entering the system:")
-    print(support_request)
-
-    # Initial state is just the conversation entering the graph.
-    # In VS Code: launch.json args -> sys.argv -> support_request
-    # -> HumanMessage -> graph state.
-    # Later nodes append AI and tool messages until the answer is complete.
+def create_initial_state(support_request: str) -> AgentState:
+    # This is the request becoming graph state.
+    # From here on, LangGraph carries messages plus explicit memory fields
+    # through every model/tool/routing step.
     print("\nPython creates initial_state.")
     print("This is the conversation LangGraph will carry through the graph.")
     print("It also starts explicit state memory as empty/default values.")
     initial_state: AgentState = {
         "messages": [
-            SystemMessage(
-                "You are a support agent. Use get_customer for customer IDs, "
-                "get_order for order IDs, search_transactions when checking charge history, "
-                "search_policy when you need refund or escalation rules, "
-                "and prepare_refund only after observations show a duplicate charge. "
-                "Never claim a refund was executed; it can only be prepared or require approval."
-            ),
+            SystemMessage(SYSTEM_PROMPT),
             HumanMessage(support_request),
         ],
         "customer_id": "",
@@ -497,7 +504,10 @@ def main() -> None:
     print("- tool_results: {}")
     print("- approval_required: False")
     print("- step_count: 0")
+    return initial_state
 
+
+def build_graph():
     # The graph is still tiny: model -> optional tools -> model.
     # The conditional edge is the agent loop in its smallest useful form.
     print("\n============================================================")
@@ -524,14 +534,28 @@ def main() -> None:
     print("\nCompile graph.")
     print("This turns the definition into a runnable workflow.")
     print("Still nothing has executed.")
-    graph = graph_builder.compile()
+    return graph_builder.compile()
+
+
+def run_agent(support_request: str) -> AgentState:
+    global model_pass_count
+    model_pass_count = 0
+
+    print("\nUser request entering the system:")
+    print(support_request)
+
+    initial_state = create_initial_state(support_request)
+    graph = build_graph()
 
     print("\n============================================================")
     print("RUN GRAPH")
     print("graph.invoke(initial_state) is where execution starts.")
     print("LangGraph now controls which node runs next.")
     final_state = graph.invoke(initial_state)
+    return final_state
 
+
+def print_final_report(final_state: AgentState) -> None:
     print("\n============================================================")
     print("GRAPH FINISHED")
     print("LangGraph returned final_state to normal Python.")
@@ -573,6 +597,24 @@ def main() -> None:
     print("-> later model pass produced final answer")
     print("-> route_after_model -> END")
     print("-> graph.invoke returned final_state")
+
+
+def main() -> None:
+    print("\n============================================================")
+    print("PROGRAM START")
+    print("Python starts locally on your machine.")
+
+    # Loads OPENAI_API_KEY from local .env into the process environment.
+    print("\nPython loads .env so the OpenAI client can authenticate.")
+    print("The API key is never printed.")
+    load_dotenv()
+    print_langsmith_status()
+
+    # In VS Code: launch.json args -> sys.argv -> support_request
+    # -> HumanMessage -> graph state.
+    support_request = " ".join(sys.argv[1:]) or DEFAULT_SUPPORT_REQUEST
+    final_state = run_agent(support_request)
+    print_final_report(final_state)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ docs/
 .env
 .venv/
 *.log
+*.pkg
+*.zip
 __pycache__/
 .pytest_cache/
 .DS_Store
