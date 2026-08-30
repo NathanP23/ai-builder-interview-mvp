@@ -16,6 +16,12 @@ PYTHONDONTWRITEBYTECODE=1 python app.py
 PYTHONDONTWRITEBYTECODE=1 python -m uvicorn api.server:app --reload
 ```
 
+Open the browser UI at:
+
+```text
+http://127.0.0.1:8000
+```
+
 ```bash
 curl -X POST http://127.0.0.1:8000/chat \
   -H "Content-Type: application/json" \

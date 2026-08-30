@@ -2,6 +2,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent.graph import run_agent
@@ -11,6 +13,7 @@ from agent.reporting import print_langsmith_status
 load_dotenv()
 
 app = FastAPI(title="Enterprise Support Agent MVP")
+app.mount("/web", StaticFiles(directory="web"), name="web")
 
 
 class ChatRequest(BaseModel):
@@ -31,6 +34,11 @@ class ChatResponse(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse("web/index.html")
 
 
 def response_from_state(final_state: dict[str, Any]) -> ChatResponse:
@@ -54,7 +62,7 @@ def response_from_state(final_state: dict[str, Any]) -> ChatResponse:
 def chat(request: ChatRequest) -> ChatResponse:
     print("\n============================================================")
     print("FASTAPI /chat")
-    print("FastAPI received JSON from an HTTP client.")
+    print("FastAPI received JSON from an HTTP client, now likely the React UI.")
     print("Pydantic already validated that message is a non-empty string.")
     print("Now Python hands the message to the same LangGraph agent used by app.py.")
     print_langsmith_status()

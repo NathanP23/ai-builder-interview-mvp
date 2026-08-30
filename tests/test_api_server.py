@@ -14,6 +14,14 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_index_serves_react_page() -> None:
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Enterprise Support Agent" in response.text
+    assert "/web/app.js" in response.text
+
+
 def test_chat_endpoint_returns_agent_state_as_json(monkeypatch) -> None:
     def fake_run_agent(message: str):
         assert message == "hello"
